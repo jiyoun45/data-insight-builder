@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Insight Builder</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Chart.js 및 마크다운 파서 CDN 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 1. 헤더 영역 -->
+        <header class="main-header">
+            <div class="header-content">
+                <h1>📊 Data Insight Builder</h1>
+                <p class="subtitle">World Bank 통계 진단 & Gemini AI 기반 데이터 인사이트 빌더</p>
+            </div>
+            <div class="memory-alert">
+                <span class="alert-icon">⚠️</span>
+                <span>업로드된 파일은 서버 메모리에만 임시 보관되며, 서버를 재시작하면 안전하게 사라집니다.</span>
+            </div>
+        </header>
+
+        <!-- 2. 파일 업로드 및 진단 섹션 -->
+        <section class="card upload-card">
+            <h2>1. CSV 데이터셋 업로드</h2>
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-icon">📁</div>
+                <p class="drop-text">CSV 파일을 이곳에 드래그하거나 클릭하여 선택하세요</p>
+                <input type="file" id="fileInput" accept=".csv" style="display: none;">
+                <button type="button" class="btn btn-secondary" id="browseBtn">파일 찾아보기</button>
+                <p id="selectedFileName" class="selected-file-name"></p>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-primary" id="inspectBtn" disabled>데이터셋 진단 시작 (/inspect)</button>
+                <span id="inspectSpinner" class="spinner hidden"></span>
+            </div>
+        </section>
+
+        <!-- 3. 진단 결과 표시 섹션 (진단 완료 후 노출) -->
+        <section class="card result-card hidden" id="inspectResultCard">
+            <h2>2. 데이터셋 품질 및 특성 진단 결과</h2>
+            <div class="metrics-grid" id="metricsGrid">
+                <!-- 동적으로 메트릭 카드 주입 -->
+            </div>
+
+            <!-- 미리보기 테이블 -->
+            <div class="preview-container">
+                <h3>상위 5개 행 미리보기</h3>
+                <div class="table-wrapper">
+                    <table class="data-table" id="previewTable">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- AI 분석 제안 요청 버튼 -->
+            <div class="action-row text-center">
+                <button type="button" class="btn btn-accent" id="suggestBtn">
+                    🤖 Gemini에게 최적 분석 제안 받기 (/suggest)
+                </button>
+                <span id="suggestSpinner" class="spinner hidden"></span>
+            </div>
+        </section>
+
+        <!-- 4. Gemini AI 분석 제안 목록 (제안 완료 후 노출) -->
+        <section class="card suggestions-card hidden" id="suggestionsCard">
+            <h2>3. Gemini AI 추천 분석 제안 (3~5개)</h2>
+            <p class="section-desc">AI가 데이터 특성(연도 범위, 결측치, 49개 집계 행 등)을 분석하여 제안한 12개 카탈로그 내 분석 항목입니다.</p>
+            <div class="suggestions-grid" id="suggestionsGrid">
+                <!-- 동적 제안 카드 주입 -->
+            </div>
+        </section>
+
+        <!-- 5. 도구 실행 및 파라미터 제어 섹션 (도구 선택 후 노출) -->
+        <section class="card tool-exec-card hidden" id="toolExecCard">
+            <h2>4. 선택된 분석 도구 실행 (/run)</h2>
+            <div class="tool-info-bar">
+                <span class="tool-badge" id="currentToolName">도구명</span>
+                <span class="tool-desc" id="currentToolDesc"></span>
+            </div>
+
+            <div class="params-form" id="paramsForm">
+                <!-- 도구별 파라미터 입력 필드 동적 주입 -->
+            </div>
+
+            <div class="action-row">
+                <button type="button" class="btn btn-primary" id="runToolBtn">실제 계산 및 차트 시각화 (/run)</button>
+                <span id="runSpinner" class="spinner hidden"></span>
+            </div>
+        </section>
+
+        <!-- 6. 분석 결과 및 시각화 차트 섹션 (실행 완료 후 노출) -->
+        <section class="card chart-card hidden" id="chartCard">
+            <h2>5. 분석 및 시각화 결과</h2>
+            <!-- 투명성 배너 -->
+            <div class="transparency-banner" id="transparencyBanner">
+                <!-- 기준시점, 사용 행, 제외 행과 사유 -->
+            </div>
+
+            <!-- 차트 캔버스 영역 -->
+            <div class="chart-wrapper">
+                <canvas id="analysisChart"></canvas>
+            </div>
+
+            <!-- 주의사항 목록 -->
+            <div class="cautions-box" id="cautionsBox"></div>
+
+            <!-- AI 해석 요청 영역 -->
+            <div class="explain-trigger-box">
+                <h3>💡 이 분석 결과에 대해 Gemini AI에게 해석 보고서 요청하기</h3>
+                <div class="mode-selector">
+                    <label class="mode-label">
+                        <input type="radio" name="explainMode" value="B" checked>
+                        <span><strong>모드 B (정식 권장)</strong>: Pandas 계산 결과 기반 7대 섹션 정밀 리포트</span>
+                    </label>
+                    <label class="mode-label">
+                        <input type="radio" name="explainMode" value="A">
+                        <span><strong>모드 A (비교용)</strong>: 계산 수치 없이 요청하는 일반 AI 요약 (추정 위험성 비교)</span>
+                    </label>
+                </div>
+                <button type="button" class="btn btn-accent" id="explainBtn">
+                    📝 AI 심층 해석 보고서 생성 (/explain)
+                </button>
+                <span id="explainSpinner" class="spinner hidden"></span>
+            </div>
+        </section>
+
+        <!-- 7. Gemini AI 심층 해석 보고서 카드 (해석 완료 후 노출) -->
+        <section class="card report-card hidden" id="reportCard">
+            <div class="report-header">
+                <h2>6. Gemini AI 인사이트 해석 리포트</h2>
+                <span class="badge" id="reportModeBadge">모드 B</span>
+            </div>
+            <div class="markdown-body" id="reportContent">
+                <!-- 마크다운 렌더링 영역 -->
+            </div>
+        </section>
+
+        <!-- 푸터 -->
+        <footer class="main-footer">
+            <p>Data Insight Builder • AI 데이터·앱 메이커 프로젝트 • Powered by Flask & Google Gemini</p>
+        </footer>
+    </div>
+
+    <!-- 순수 바닐라 자바스크립트 연결 -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
