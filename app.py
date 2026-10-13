@@ -491,6 +491,128 @@ def follow_up_chat():
         return jsonify({"error": f"AI 답변 생성 중 오류가 발생했습니다: {str(e)}"}), 500
 
 
+@app.route("/ask", methods=["POST"])
+def natural_language_ask():
+    """
+    POST /ask
+    - 자연어 질문을 받아 도구(tool) 및 파라미터를 자동 매핑
+    - Pandas로 실제 계산을 수행하고 계산 결과 기반의 팩트 자연어 답변 작성
+    - 사용자가 즉시 차트를 볼 수 있도록 run_result를 동봉하여 반환
+    """
+    global LAST_RUN_RESULT
+    if CURRENT_DATASET is None:
+        return jsonify({"error": "분석할 데이터셋이 메모리에 없습니다. 먼저 CSV 파일을 업로드해주세요."}), 400
+    if not gemini_client:
+        return jsonify({"error": "GEMINI_API_KEY가 서버에 설정되어 있지 않습니다."}), 500
+
+    req_data = request.get_json() or {}
+    query = req_data.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "질문 내용을 입력해주세요."}), 400
+
+    year_cols = [c for c in CURRENT_DATASET.columns if str(c).strip().isdigit()]
+    rec_year = year_cols[-2] if len(year_cols) >= 2 else (year_cols[-1] if year_cols else "2024")
+    available_tools = list(tools.TOOL_REGISTRY.keys())
+
+    mapping_prompt = f"""사용자가 데이터셋에 대해 자연어로 다음과 같이 질문했습니다:
+질문: "{query}"
+
+사용 가능한 12개 도구 목록:
+{json.dumps(available_tools, ensure_ascii=False)}
+
+데이터셋 정보:
+- 숫자 연도 열: {year_cols[-5:] if len(year_cols) >= 5 else year_cols}
+- 추천 기준연도: {rec_year}
+- 주요 식별 열: Country Name, Country Code
+
+이 질문에 답하기 위해 가장 적합한 도구 1개와 파라미터를 선택하세요.
+만약 특정 국가(예: '대한민국', '한국', '미국')를 비교하고자 한다면 highlight_entity에 영문 국가명('Korea, Rep.', 'United States' 등)을 기재하세요.
+
+반드시 아래 JSON 형식으로만 응답하세요:
+{{
+  "tool": "도구명 (위 12개 중 하나)",
+  "params": {{
+    "reference_period": "{rec_year}",
+    "n": 10,
+    "exclude_aggregates": true
+  }},
+  "highlight_entity": "Korea, Rep."
+}}
+"""
+
+    try:
+        map_resp = gemini_client.models.generate_content(
+            model=gemini_model,
+            contents=mapping_prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json")
+        )
+        mapping_data = json.loads(map_resp.text)
+        selected_tool = mapping_data.get("tool")
+        if selected_tool not in tools.TOOL_REGISTRY:
+            selected_tool = "top_bottom_n"
+
+        params = mapping_data.get("params", {})
+        if "reference_period" not in params:
+            params["reference_period"] = rec_year
+
+        highlight_entity = mapping_data.get("highlight_entity")
+
+        # 도구 실행
+        tool_func = tools.TOOL_REGISTRY[selected_tool]
+        run_output = tool_func(CURRENT_DATASET, params)
+
+        # highlight_entity(예: 한국)가 top_bottom_n에 누락되어 있다면 차트에 함께 추가
+        ref_col = str(run_output.get("reference_period"))
+        if highlight_entity and selected_tool == "top_bottom_n" and "Country Name" in CURRENT_DATASET and ref_col in CURRENT_DATASET:
+            kr_match = CURRENT_DATASET[CURRENT_DATASET["Country Name"].astype(str).str.lower() == highlight_entity.lower()]
+            if len(kr_match) > 0 and pd.notna(kr_match[ref_col].values[0]):
+                kr_val = float(pd.to_numeric(kr_match[ref_col].values[0]))
+                kr_name = str(kr_match["Country Name"].values[0])
+
+                clean_s = pd.to_numeric(CURRENT_DATASET[~CURRENT_DATASET["Country Code"].isin(tools.KNOWN_AGGREGATE_CODES)][ref_col], errors="coerce").dropna()
+                kr_rank = int((clean_s > kr_val).sum()) + 1
+
+                top_list = run_output["result"].get("top_n", [])
+                if not any(item["label"].lower() == kr_name.lower() for item in top_list):
+                    top_list.append({
+                        "label": f"{kr_name} ({kr_rank}위)",
+                        "value": round(kr_val, 2),
+                        "is_highlight": True
+                    })
+                    run_output["result"]["top_n"] = top_list
+
+        LAST_RUN_RESULT = run_output
+
+        # 실제 수치 결과 바탕으로 자연어 답변 생성
+        answer_prompt = f"""사용자가 다음과 같이 질문했습니다: "{query}"
+
+아래는 Pandas가 실제 데이터셋에서 계산한 검증된 결과입니다:
+{json.dumps(run_output, ensure_ascii=False, indent=2)}
+
+[답변 작성 가이드]
+1. 위 계산 결과에 실제로 존재하는 숫자와 팩트만을 사용하여 질문에 명쾌하고 친절하게 답변하세요.
+2. 수치(순위, 백분율, 차이 등)를 구체적으로 언급하며 비교 설명하세요.
+3. 데이터에 없는 사실은 절대 지어내지 마세요.
+4. 마크다운 목록과 볼드체를 적절히 활용하여 읽기 쉽게 2~3문단으로 답변하세요.
+"""
+        ans_resp = gemini_client.models.generate_content(
+            model=gemini_model,
+            contents=answer_prompt
+        )
+
+        return jsonify({
+            "success": True,
+            "query": query,
+            "answer": ans_resp.text.strip(),
+            "tool": selected_tool,
+            "params": params,
+            "run_result": run_output
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"자연어 질문 분석 중 오류가 발생했습니다: {str(e)}"}), 500
+
+
 if __name__ == "__main__":
     debug_mode = os.getenv("FLASK_DEBUG", "true").lower() == "true"
     port = int(os.getenv("FLASK_PORT", 5001))

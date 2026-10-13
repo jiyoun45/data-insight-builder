@@ -103,8 +103,51 @@ function initActionEvents() {
     runToolBtn.addEventListener("click", handleRunTool);
     explainBtn.addEventListener("click", handleExplain);
 
+    // 자연어 질문(/ask) 이벤트 바인딩
+    const nlQueryBtn = document.getElementById("nlQueryBtn");
+    const nlQueryInput = document.getElementById("nlQueryInput");
+    const visualizeCtaBtn = document.getElementById("visualizeCtaBtn");
+
+    if (nlQueryBtn && nlQueryInput) {
+        nlQueryBtn.addEventListener("click", () => {
+            const q = nlQueryInput.value.trim();
+            if (q) handleNaturalLanguageAsk(q);
+        });
+
+        nlQueryInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                const q = nlQueryInput.value.trim();
+                if (q) handleNaturalLanguageAsk(q);
+            }
+        });
+    }
+
+    // 자연어 예시 질문 칩 클릭
+    const askChips = document.querySelectorAll("#askChipsList .chip-btn");
+    askChips.forEach(chip => {
+        chip.addEventListener("click", () => {
+            const query = chip.getAttribute("data-query");
+            if (query) {
+                if (nlQueryInput) nlQueryInput.value = query;
+                handleNaturalLanguageAsk(query);
+            }
+        });
+    });
+
+    // 자연어 답변 후 "시각화 차트 보기" 클릭
+    if (visualizeCtaBtn) {
+        visualizeCtaBtn.addEventListener("click", () => {
+            if (currentRunResult) {
+                renderChartAndResults(currentRunResult);
+                const chartCard = document.getElementById("chartCard");
+                if (chartCard) chartCard.scrollIntoView({ behavior: "smooth" });
+            }
+        });
+    }
+
     // Q&A 추천 질문 칩 클릭 이벤트 바인딩
-    document.querySelectorAll(".chip-btn").forEach(btn => {
+    document.querySelectorAll("#qaChipsList .chip-btn").forEach(btn => {
         btn.addEventListener("click", () => {
             const question = btn.getAttribute("data-q");
             if (question) {
@@ -214,6 +257,11 @@ function renderInspectResults(data) {
     // 미리보기 테이블 렌더링
     renderPreviewTable(data.columns, data.preview);
     card.classList.remove("hidden");
+
+    // 섹션 3: 자연어 질문 카드 노출
+    const askCard = document.getElementById("askCard");
+    if (askCard) askCard.classList.remove("hidden");
+
     card.scrollIntoView({ behavior: "smooth" });
 }
 
@@ -229,6 +277,52 @@ function renderPreviewTable(columns, previewRows) {
     tbody.innerHTML = previewRows.map(row => `
         <tr>${displayCols.map(c => `<td>${escapeHtml(String(row[c] !== null && row[c] !== undefined ? row[c] : "-"))}</td>`).join("")}</tr>
     `).join("");
+}
+
+// -------------------------------------------------------------
+// 3.5. /ask 자연어 질문 처리
+// -------------------------------------------------------------
+async function handleNaturalLanguageAsk(query) {
+    if (!query || !query.trim()) return;
+
+    const btn = document.getElementById("nlQueryBtn");
+    const spinner = document.getElementById("askSpinner");
+    const answerBox = document.getElementById("askAnswerBox");
+    const answerContent = document.getElementById("askAnswerContent");
+
+    try {
+        if (btn) btn.disabled = true;
+        if (spinner) spinner.classList.remove("hidden");
+        console.log(`[ASK] 자연어 질문 시작: "${query}"`);
+
+        const res = await fetch("/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: query })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "자연어 질문 분석 실패");
+
+        console.log(`[ASK] 답변 수신 (도구: ${data.tool}, 기준시점: ${data.params?.reference_period})`);
+
+        // 상태 및 결과 저장
+        currentSelectedTool = data.tool;
+        currentRunResult = data.run_result;
+
+        // 마크다운 파싱하여 답변 표시
+        const parsedAnswer = typeof marked !== "undefined" ? marked.parse(data.answer) : escapeHtml(data.answer);
+        answerContent.innerHTML = parsedAnswer;
+        answerBox.classList.remove("hidden");
+        answerBox.scrollIntoView({ behavior: "smooth" });
+
+    } catch (err) {
+        console.error(`[ERROR] 자연어 질문 처리 중 오류: ${err.message}`);
+        alert(`질문 처리 오류: ${err.message}`);
+    } finally {
+        if (btn) btn.disabled = false;
+        if (spinner) spinner.classList.add("hidden");
+    }
 }
 
 // -------------------------------------------------------------
@@ -501,6 +595,9 @@ function renderChart(result) {
 
     if (chartType === "horizontalBar") {
         const topItems = result.top_n || [];
+        const backgroundColors = topItems.map(d => d.is_highlight ? "#f59e0b" : "#3b82f6");
+        const borderColors = topItems.map(d => d.is_highlight ? "#d97706" : "#2563eb");
+
         config = {
             type: "bar",
             data: {
@@ -508,7 +605,9 @@ function renderChart(result) {
                 datasets: [{
                     label: `상위 순위 (${result.reference_period}년)`,
                     data: topItems.map(d => d.value),
-                    backgroundColor: "#3b82f6"
+                    backgroundColor: backgroundColors,
+                    borderColor: borderColors,
+                    borderWidth: 1
                 }]
             },
             options: {
