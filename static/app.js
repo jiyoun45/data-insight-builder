@@ -11,6 +11,8 @@ let currentInspectData = null;
 let currentSelectedTool = null;
 let currentRunResult = null;
 let activeChartInstance = null;
+let currentReportMarkdown = "";
+let chatHistory = [];
 
 // 도구 기본 설명 및 필요 파라미터 맵
 const TOOL_CONFIG = {
@@ -100,7 +102,43 @@ function initActionEvents() {
     suggestBtn.addEventListener("click", handleSuggest);
     runToolBtn.addEventListener("click", handleRunTool);
     explainBtn.addEventListener("click", handleExplain);
+
+    // Q&A 추천 질문 칩 클릭 이벤트 바인딩
+    document.querySelectorAll(".chip-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const question = btn.getAttribute("data-q");
+            if (question) {
+                sendFollowUpQuestion(question);
+            }
+        });
+    });
+
+    // Q&A 수동 입력창 이벤트
+    const chatInput = document.getElementById("chatInput");
+    const chatSendBtn = document.getElementById("chatSendBtn");
+
+    if (chatSendBtn && chatInput) {
+        chatSendBtn.addEventListener("click", () => {
+            const q = chatInput.value.trim();
+            if (q) {
+                chatInput.value = "";
+                sendFollowUpQuestion(q);
+            }
+        });
+
+        chatInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                const q = chatInput.value.trim();
+                if (q) {
+                    chatInput.value = "";
+                    sendFollowUpQuestion(q);
+                }
+            }
+        });
+    }
 }
+
 
 // -------------------------------------------------------------
 // 3. /inspect 진단 요청
@@ -583,7 +621,9 @@ function renderExplainReport(mode, markdownText) {
     const card = document.getElementById("reportCard");
     const badge = document.getElementById("reportModeBadge");
     const content = document.getElementById("reportContent");
+    const chatCard = document.getElementById("chatCard");
 
+    currentReportMarkdown = markdownText;
     badge.textContent = mode === "B" ? "모드 B (정식 리포트)" : "모드 A (비교용 요약)";
     badge.style.background = mode === "B" ? "#7c3aed" : "#64748b";
 
@@ -591,7 +631,79 @@ function renderExplainReport(mode, markdownText) {
     content.innerHTML = typeof marked !== "undefined" ? marked.parse(markdownText) : markdownText;
 
     card.classList.remove("hidden");
+    if (chatCard) {
+        chatCard.classList.remove("hidden");
+    }
     card.scrollIntoView({ behavior: "smooth" });
+}
+
+// -------------------------------------------------------------
+// 8. 후속 Q&A 대화 전송 및 응답 처리
+// -------------------------------------------------------------
+async function sendFollowUpQuestion(question) {
+    const messagesContainer = document.getElementById("chatMessages");
+    const spinner = document.getElementById("chatSpinner");
+    const sendBtn = document.getElementById("chatSendBtn");
+
+    // 1. 사용자 메시지 버블 추가
+    const userMsgEl = document.createElement("div");
+    userMsgEl.className = "chat-msg user-msg";
+    userMsgEl.innerHTML = `<div class="msg-content">${escapeHtml(question)}</div>`;
+    messagesContainer.appendChild(userMsgEl);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // 히스토리 기록
+    chatHistory.push({ role: "user", content: question });
+
+    // 2. AI 로딩 상태 표시
+    if (sendBtn) sendBtn.disabled = true;
+    if (spinner) spinner.classList.remove("hidden");
+
+    try {
+        console.log(`[CHAT] 후속 질문 전송: "${question}"`);
+        const res = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                message: question,
+                chat_history: chatHistory,
+                report_context: currentReportMarkdown,
+                run_result: currentRunResult
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "답변 수신 실패");
+
+        const aiAnswer = data.answer || "";
+        chatHistory.push({ role: "model", content: aiAnswer });
+
+        // 3. AI 답변 메시지 버블 추가
+        const aiMsgEl = document.createElement("div");
+        aiMsgEl.className = "chat-msg ai-msg";
+        const parsedContent = typeof marked !== "undefined" ? marked.parse(aiAnswer) : escapeHtml(aiAnswer);
+        aiMsgEl.innerHTML = `
+            <div class="msg-avatar">🤖</div>
+            <div class="msg-content">${parsedContent}</div>
+        `;
+        messagesContainer.appendChild(aiMsgEl);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        console.log("[CHAT] 후속 질문 답변 완료");
+
+    } catch (err) {
+        console.error(`[ERROR] 후속 질문 처리 중 오류: ${err.message}`);
+        const errMsgEl = document.createElement("div");
+        errMsgEl.className = "chat-msg ai-msg";
+        errMsgEl.innerHTML = `
+            <div class="msg-avatar">⚠️</div>
+            <div class="msg-content" style="color: #ef4444;">답변 생성 중 오류가 발생했습니다: ${escapeHtml(err.message)}</div>
+        `;
+        messagesContainer.appendChild(errMsgEl);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    } finally {
+        if (sendBtn) sendBtn.disabled = false;
+        if (spinner) spinner.classList.add("hidden");
+    }
 }
 
 function escapeHtml(str) {
@@ -602,3 +714,4 @@ function escapeHtml(str) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
 }
+

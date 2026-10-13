@@ -140,6 +140,48 @@
             </div>
         </section>
 
+        <!-- 8. 후속 질문 & AI 대화창 섹션 (해석 완료 후 노출) -->
+        <section class="card chat-card hidden" id="chatCard">
+            <h2>7. 보고서에 대해 후속 질문하기 (Q&A 대화)</h2>
+            <p class="section-desc">보고서 내용 중 궁금한 점을 직접 물어보거나, 아래 추천 질문 말풍선을 클릭해 보세요.</p>
+            
+            <!-- 말풍선 추천 질문 칩들 -->
+            <div class="chat-chips-container">
+                <span class="chips-title">💡 추천 질문 클릭:</span>
+                <div class="chips-list" id="chipsList">
+                    <button type="button" class="chip-btn chip-highlight" data-q="중학생도 이해할 수 있게 쉽게 설명해줘">
+                        👶 중학생도 이해할 수 있게 쉽게 설명해줘
+                    </button>
+                    <button type="button" class="chip-btn" data-q="상위 국가와 하위 국가의 격차가 왜 이렇게 크게 나타날까?">
+                        🌍 상하위 국가 격차가 왜 이렇게 클까?
+                    </button>
+                    <button type="button" class="chip-btn" data-q="이 통계 결과를 해석할 때 주의해야 할 한계점이나 함정이 뭐야?">
+                        ⚠️ 이 통계의 한계점과 주의사항은?
+                    </button>
+                    <button type="button" class="chip-btn" data-q="한국(Korea)은 다른 나라들과 비교했을 때 어떤 위치와 특징이 있어?">
+                        🇰🇷 한국의 상대적 위치와 특징은?
+                    </button>
+                </div>
+            </div>
+
+            <!-- 대화 스레드 영역 -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="chat-msg ai-msg">
+                    <div class="msg-avatar">🤖</div>
+                    <div class="msg-content">
+                        안녕하세요! 분석 보고서에 대해 궁금한 점이 있으신가요? 위의 말풍선을 클릭하시거나 아래 입력창에 직접 질문해 주세요!
+                    </div>
+                </div>
+            </div>
+
+            <!-- 대화 입력창 -->
+            <div class="chat-input-bar">
+                <input type="text" id="chatInput" placeholder="보고서에 대해 궁금한 내용을 자유롭게 질문해 보세요... (Enter로 전송)" autocomplete="off">
+                <button type="button" class="btn btn-primary" id="chatSendBtn">전송</button>
+                <span id="chatSpinner" class="spinner hidden"></span>
+            </div>
+        </section>
+
         <!-- 푸터 -->
         <footer class="main-footer">
             <p>Data Insight Builder • AI 데이터·앱 메이커 프로젝트 • Powered by Flask & Google Gemini</p>

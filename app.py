@@ -436,7 +436,63 @@ def explain_analysis():
         return jsonify({"error": f"Gemini 해석 생성 중 오류가 발생했습니다: {str(e)}"}), 500
 
 
+@app.route("/chat", methods=["POST"])
+def follow_up_chat():
+    """
+    POST /chat
+    - 최종 분석 리포트 및 계산 결과를 바탕으로 사용자의 후속 질문에 실시간 답변
+    - '중학생도 이해할 수 있게 쉽게 설명해줘' 등 다양한 맞춤형 질문 지원
+    """
+    if not gemini_client:
+        return jsonify({"error": "GEMINI_API_KEY가 서버에 설정되어 있지 않습니다."}), 500
+
+    req_data = request.get_json() or {}
+    user_message = req_data.get("message", "").strip()
+    if not user_message:
+        return jsonify({"error": "질문 내용이 없습니다."}), 400
+
+    chat_history = req_data.get("chat_history", [])
+    report_context = req_data.get("report_context", "")
+    run_result = req_data.get("run_result") or LAST_RUN_RESULT
+
+    system_instruction = f"""당신은 친절하고 전문적인 AI 데이터 멘토입니다.
+사용자는 앞서 생성된 World Bank 데이터 분석 보고서와 Pandas 계산 결과를 보고 후속 질문을 하고 있습니다.
+
+[이전 분석 보고서 내용]
+{report_context}
+
+[실제 Pandas 계산 결과]
+{json.dumps(run_result, ensure_ascii=False, indent=2) if run_result else "계산 결과 없음"}
+
+[답변 가이드라인]
+1. 사용자가 '중학생도 이해할 수 있게 쉽게 설명해줘'라고 하거나 쉬운 설명을 요청하면, 전문 통계 용어를 일상적인 비유(학교, 친구, 100명 중 몇 명 등)로 풀어서 아주 쉽고 친근하게 설명하세요.
+2. 사실에 기반하여 답변하되, 실제 데이터에 없는 내용은 함부로 지어내지 말고 "이 데이터셋에는 해당 정보가 없어 추정하기 어렵습니다"라고 솔직하게 안내하세요.
+3. 상관관계와 인과관계를 절대 혼동하지 않도록 주의하세요.
+4. 마크다운(볼드체, 목록 등)을 적절히 활용하여 가독성 높게 작성하세요.
+"""
+
+    conversation_prompt = f"{system_instruction}\n\n[대화 기록]\n"
+    for msg in chat_history[-6:]:
+        role = "사용자" if msg.get("role") == "user" else "AI 멘토"
+        conversation_prompt += f"{role}: {msg.get('content')}\n"
+
+    conversation_prompt += f"사용자: {user_message}\nAI 멘토:"
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=gemini_model,
+            contents=conversation_prompt
+        )
+        return jsonify({
+            "success": True,
+            "answer": response.text.strip()
+        })
+    except Exception as e:
+        return jsonify({"error": f"AI 답변 생성 중 오류가 발생했습니다: {str(e)}"}), 500
+
+
 if __name__ == "__main__":
     debug_mode = os.getenv("FLASK_DEBUG", "true").lower() == "true"
     port = int(os.getenv("FLASK_PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=debug_mode)
+
