@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Data Insight Builder</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <!-- Chart.js 및 마크다운 파서 CDN 로드 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -30,7 +30,10 @@
                 <div class="drop-icon">📁</div>
                 <p class="drop-text">CSV 파일을 이곳에 드래그하거나 클릭하여 선택하세요</p>
                 <input type="file" id="fileInput" accept=".csv" style="display: none;">
-                <button type="button" class="btn btn-secondary" id="browseBtn">파일 찾아보기</button>
+                <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-secondary" id="browseBtn">내 컴퓨터에서 파일 찾기</button>
+                    <button type="button" class="btn btn-accent" id="sampleDataBtn">🚀 샘플 데이터로 즉시 체험하기</button>
+                </div>
                 <p id="selectedFileName" class="selected-file-name"></p>
             </div>
             <div class="action-row">
@@ -238,6 +241,6 @@
     </div>
 
     <!-- 순수 바닐라 자바스크립트 연결 -->
-    <script src="/static/app.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

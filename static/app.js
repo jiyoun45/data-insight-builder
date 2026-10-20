@@ -76,6 +76,36 @@ function initUploadEvents() {
         }
     });
 
+    const sampleDataBtn = document.getElementById("sampleDataBtn");
+    if (sampleDataBtn) {
+        sampleDataBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const spinner = document.getElementById("inspectSpinner");
+            try {
+                sampleDataBtn.disabled = true;
+                if (spinner) spinner.classList.remove("hidden");
+                selectedFileName.textContent = "🚀 World Bank 샘플 데이터셋 로딩 중...";
+
+                const res = await fetch("/sample-dataset", { method: "POST" });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "샘플 데이터 로드 실패");
+
+                currentInspectData = data;
+                selectedFileName.textContent = `선택된 파일: ${data.filename} (${data.row_count}행, ${data.column_count}개 열)`;
+                console.log("[UPLOAD] 샘플 데이터 로드 완료:", data);
+
+                renderInspectResults(data);
+            } catch (err) {
+                console.error("[ERROR] 샘플 데이터 로드 오류:", err);
+                alert("샘플 데이터 로드 실패: " + err.message);
+                selectedFileName.textContent = "";
+            } finally {
+                sampleDataBtn.disabled = false;
+                if (spinner) spinner.classList.add("hidden");
+            }
+        });
+    }
+
     function handleFileSelection(file) {
         if (!file.name.endsWith(".csv")) {
             alert("CSV 파일(.csv)만 업로드할 수 있습니다.");

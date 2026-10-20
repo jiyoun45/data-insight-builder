@@ -226,6 +226,46 @@ def inspect_file():
         return jsonify({"error": f"파일 분석 중 오류가 발생했습니다: {str(e)}"}), 500
 
 
+@app.route("/sample-dataset", methods=["POST", "GET"])
+def load_sample_dataset():
+    """기본 제공되는 World Bank 인터넷 보급률 샘플 데이터를 원클릭으로 로드"""
+    global CURRENT_DATASET, CURRENT_FILENAME
+    sample_path = os.path.join(os.path.dirname(__file__), "data", "API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv")
+    if not os.path.exists(sample_path):
+        sample_path = os.path.join(os.path.dirname(__file__), "data", "API_IT", "API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv")
+
+    if not os.path.exists(sample_path):
+        return jsonify({"error": "샘플 데이터셋 파일을 찾을 수 없습니다."}), 404
+
+    try:
+        with open(sample_path, "rb") as f:
+            file_bytes = f.read()
+
+        decoded_text, used_encoding = detect_encoding_and_read(file_bytes)
+        header_idx = detect_header_row(decoded_text)
+        df = pd.read_csv(io.StringIO(decoded_text), skiprows=header_idx)
+        df = df.loc[:, ~df.columns.str.contains(r"^Unnamed: \d+$", na=False) | df.notna().any()]
+
+        CURRENT_DATASET = df
+        CURRENT_FILENAME = "World_Bank_Internet_Usage.csv"
+
+        columns_list = [str(c).strip() for c in df.columns]
+        analysis_result = analyze_dataset(df)
+
+        return jsonify({
+            "success": True,
+            "filename": CURRENT_FILENAME,
+            "encoding": used_encoding,
+            "header_row_index": header_idx,
+            "row_count": len(df),
+            "column_count": len(columns_list),
+            "columns": columns_list,
+            **analysis_result
+        })
+    except Exception as e:
+        return jsonify({"error": f"샘플 데이터 로드 실패: {str(e)}"}), 500
+
+
 @app.route("/suggest", methods=["POST"])
 def suggest_analyses():
     """
