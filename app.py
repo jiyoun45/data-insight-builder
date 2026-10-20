@@ -11,7 +11,13 @@ import tools
 
 load_dotenv()
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static"),
+    static_url_path="/static"
+)
 
 # 업로드 최대 용량 설정 (기본값 10MB)
 max_mb = int(os.getenv("MAX_UPLOAD_MB", 10))
